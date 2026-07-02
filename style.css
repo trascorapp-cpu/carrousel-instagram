@@ -188,23 +188,50 @@ body {
   color: var(--color-text-muted);
 }
 
-/* ===== Slide count control ===== */
-.slide-count-control {
+/* ===== Grid (columns x rows) control ===== */
+.grid-control {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  gap: 16px;
-  margin: 20px 0;
+  gap: 32px;
+  margin: 20px 0 8px;
+  flex-wrap: wrap;
 }
 
-#slide-count {
-  width: 70px;
+.grid-control-field {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.grid-control-field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.counter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.counter input {
+  width: 60px;
   text-align: center;
   font-size: 1.3rem;
   font-weight: 700;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 8px;
+}
+
+.total-slides {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  margin: 0 0 4px;
 }
 
 /* ===== Preview grid ===== */
