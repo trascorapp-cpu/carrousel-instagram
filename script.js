@@ -18,9 +18,13 @@ const imageDimensions = document.getElementById('image-dimensions');
 const changeImageBtn = document.getElementById('change-image-btn');
 
 const optionsSection = document.getElementById('options-section');
-const slideCountInput = document.getElementById('slide-count');
-const decreaseCountBtn = document.getElementById('decrease-count');
-const increaseCountBtn = document.getElementById('increase-count');
+const colsInput = document.getElementById('cols-count');
+const rowsInput = document.getElementById('rows-count');
+const decreaseColsBtn = document.getElementById('decrease-cols');
+const increaseColsBtn = document.getElementById('increase-cols');
+const decreaseRowsBtn = document.getElementById('decrease-rows');
+const increaseRowsBtn = document.getElementById('increase-rows');
+const totalSlidesLabel = document.getElementById('total-slides');
 const convertBtn = document.getElementById('convert-btn');
 
 const previewSection = document.getElementById('preview-section');
@@ -86,21 +90,35 @@ function onImageLoaded(img, dataUrl) {
   imageDimensions.textContent = `${img.width} × ${img.height} px`;
   imageInfo.classList.remove('hidden');
 
-  const detectedCount = detectSlideCount(img.width, img.height);
-  slideCountInput.value = detectedCount;
+  const detectedGrid = detectGrid(img.width, img.height);
+  colsInput.value = detectedGrid.cols;
+  rowsInput.value = detectedGrid.rows;
+  updateTotalSlidesLabel();
   optionsSection.classList.remove('hidden');
   previewSection.classList.add('hidden');
 
   optionsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-// ===== Détection automatique du nombre de slides =====
-// Hypothèse : les slides sont accolées horizontalement et proches d'un
-// format carré (1:1) ou portrait (4:5), les deux formats les plus courants
-// pour les carrousels Instagram. On teste les deux et on garde le nombre
-// de slides le plus plausible (proche d'un entier).
-function detectSlideCount(width, height) {
-  const candidates = [1, OUTPUT_RATIO]; // 1:1 puis 4:5
+// ===== Détection automatique de la disposition (colonnes x lignes) =====
+// Deux cas fréquents pour un carrousel Instagram :
+// - une bande horizontale (1 ligne, plusieurs slides carrées ou 4:5 côte à côte)
+// - une grille carrée (ex : 3x3), format très utilisé par les outils de
+//   création de carrousels (Canva et autres).
+// C'est une estimation : les champs restent modifiables manuellement.
+function detectGrid(width, height) {
+  const overallRatio = width / height;
+
+  // Image globalement carrée : on suppose une grille 3x3, la disposition
+  // la plus courante pour ce type d'export.
+  if (overallRatio > 0.85 && overallRatio < 1.18) {
+    return { cols: 3, rows: 3 };
+  }
+
+  // Sinon, on suppose une bande horizontale à une seule ligne, et on estime
+  // le nombre de slides en comparant la largeur à des formats de slide
+  // courants (carré 1:1 ou portrait 4:5).
+  const candidates = [1, OUTPUT_RATIO];
   let bestCount = 2;
   let bestScore = Infinity;
 
@@ -115,71 +133,96 @@ function detectSlideCount(width, height) {
     }
   });
 
-  return Math.min(Math.max(bestCount, 1), 20);
+  return { cols: Math.min(Math.max(bestCount, 1), 10), rows: 1 };
 }
 
-// ===== Contrôle du nombre de slides =====
+// ===== Contrôle des colonnes / lignes =====
 
-decreaseCountBtn.addEventListener('click', () => {
-  const value = Math.max(1, parseInt(slideCountInput.value || '1', 10) - 1);
-  slideCountInput.value = value;
+function updateTotalSlidesLabel() {
+  const cols = parseInt(colsInput.value, 10) || 1;
+  const rows = parseInt(rowsInput.value, 10) || 1;
+  const total = cols * rows;
+  totalSlidesLabel.textContent = `= ${total} slide${total > 1 ? 's' : ''}`;
+}
+
+decreaseColsBtn.addEventListener('click', () => {
+  colsInput.value = Math.max(1, parseInt(colsInput.value || '1', 10) - 1);
+  updateTotalSlidesLabel();
 });
 
-increaseCountBtn.addEventListener('click', () => {
-  const value = Math.min(20, parseInt(slideCountInput.value || '1', 10) + 1);
-  slideCountInput.value = value;
+increaseColsBtn.addEventListener('click', () => {
+  colsInput.value = Math.min(10, parseInt(colsInput.value || '1', 10) + 1);
+  updateTotalSlidesLabel();
 });
+
+decreaseRowsBtn.addEventListener('click', () => {
+  rowsInput.value = Math.max(1, parseInt(rowsInput.value || '1', 10) - 1);
+  updateTotalSlidesLabel();
+});
+
+increaseRowsBtn.addEventListener('click', () => {
+  rowsInput.value = Math.min(10, parseInt(rowsInput.value || '1', 10) + 1);
+  updateTotalSlidesLabel();
+});
+
+colsInput.addEventListener('input', updateTotalSlidesLabel);
+rowsInput.addEventListener('input', updateTotalSlidesLabel);
 
 // ===== Conversion : découpage + redimensionnement =====
 
 convertBtn.addEventListener('click', () => {
   if (!currentImage) return;
 
-  const count = Math.min(Math.max(parseInt(slideCountInput.value, 10) || 1, 1), 20);
-  generatedSlides = sliceImage(currentImage, count);
+  const cols = Math.min(Math.max(parseInt(colsInput.value, 10) || 1, 1), 10);
+  const rows = Math.min(Math.max(parseInt(rowsInput.value, 10) || 1, 1), 10);
+  generatedSlides = sliceImage(currentImage, cols, rows);
   renderPreview(generatedSlides);
 
   previewSection.classList.remove('hidden');
   previewSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 });
 
-function sliceImage(img, count) {
-  const sliceWidth = img.width / count;
+function sliceImage(img, cols, rows) {
+  const sliceWidth = img.width / cols;
+  const sliceHeight = img.height / rows;
   const slides = [];
+  let index = 0;
 
-  for (let i = 0; i < count; i++) {
-    const canvas = document.createElement('canvas');
-    canvas.width = OUTPUT_WIDTH;
-    canvas.height = OUTPUT_HEIGHT;
-    const ctx = canvas.getContext('2d');
+  // Ordre de lecture standard : gauche à droite, puis haut en bas.
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const canvas = document.createElement('canvas');
+      canvas.width = OUTPUT_WIDTH;
+      canvas.height = OUTPUT_HEIGHT;
+      const ctx = canvas.getContext('2d');
 
-    // Découpe la slice i dans l'image source
-    const sx = i * sliceWidth;
-    const sy = 0;
-    const sWidth = sliceWidth;
-    const sHeight = img.height;
+      // Découpe la cellule (c, r) dans l'image source
+      const sx = c * sliceWidth;
+      const sy = r * sliceHeight;
 
-    // Recadrage "cover" pour remplir 1080x1350 sans déformer l'image
-    const sliceRatio = sWidth / sHeight;
-    let cropWidth = sWidth;
-    let cropHeight = sHeight;
-    let cropX = sx;
-    let cropY = sy;
+      // Recadrage "cover" pour remplir 1080x1350 sans déformer l'image
+      const sliceRatio = sliceWidth / sliceHeight;
+      let cropWidth = sliceWidth;
+      let cropHeight = sliceHeight;
+      let cropX = sx;
+      let cropY = sy;
 
-    if (sliceRatio > OUTPUT_RATIO) {
-      // Slice trop large : on rogne les côtés
-      cropWidth = sHeight * OUTPUT_RATIO;
-      cropX = sx + (sWidth - cropWidth) / 2;
-    } else if (sliceRatio < OUTPUT_RATIO) {
-      // Slice trop haute : on rogne haut/bas
-      cropHeight = sWidth / OUTPUT_RATIO;
-      cropY = sy + (sHeight - cropHeight) / 2;
+      if (sliceRatio > OUTPUT_RATIO) {
+        // Cellule trop large : on rogne les côtés
+        cropWidth = sliceHeight * OUTPUT_RATIO;
+        cropX = sx + (sliceWidth - cropWidth) / 2;
+      } else if (sliceRatio < OUTPUT_RATIO) {
+        // Cellule trop haute : on rogne haut/bas
+        cropHeight = sliceWidth / OUTPUT_RATIO;
+        cropY = sy + (sliceHeight - cropHeight) / 2;
+      }
+
+      ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+
+      index++;
+      const filename = `slide_${String(index).padStart(2, '0')}.png`;
+      slides.push({ canvas, filename });
     }
-
-    ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
-
-    const filename = `slide_${String(i + 1).padStart(2, '0')}.png`;
-    slides.push({ canvas, filename });
   }
 
   return slides;
