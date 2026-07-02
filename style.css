@@ -202,6 +202,21 @@ body {
   color: var(--color-text-muted);
 }
 
+/* ===== Grid overlay preview ===== */
+.grid-preview-wrap {
+  margin: 16px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  line-height: 0;
+}
+
+.grid-preview-wrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 /* ===== Grid (columns x rows) control ===== */
 .grid-control {
   display: flex;
