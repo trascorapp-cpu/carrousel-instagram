@@ -38,14 +38,29 @@
 
     <!-- Étape 2 : Options -->
     <section class="card hidden" id="options-section">
-      <h2>2. Nombre de slides</h2>
-      <p class="hint">Nous avons détecté un nombre de slides probable. Corrigez-le si besoin.</p>
+      <h2>2. Disposition des slides</h2>
+      <p class="hint">Indiquez comment les slides sont assemblées dans l'image : en bande (1 ligne) ou en grille (plusieurs lignes). La détection automatique n'est qu'une estimation, corrigez-la si besoin.</p>
 
-      <div class="slide-count-control">
-        <button id="decrease-count" class="btn btn-round" aria-label="Diminuer">−</button>
-        <input type="number" id="slide-count" min="1" max="20" value="2">
-        <button id="increase-count" class="btn btn-round" aria-label="Augmenter">+</button>
+      <div class="grid-control">
+        <div class="grid-control-field">
+          <label for="cols-count">Colonnes</label>
+          <div class="counter">
+            <button id="decrease-cols" class="btn btn-round" aria-label="Moins de colonnes">−</button>
+            <input type="number" id="cols-count" min="1" max="10" value="2">
+            <button id="increase-cols" class="btn btn-round" aria-label="Plus de colonnes">+</button>
+          </div>
+        </div>
+        <div class="grid-control-field">
+          <label for="rows-count">Lignes</label>
+          <div class="counter">
+            <button id="decrease-rows" class="btn btn-round" aria-label="Moins de lignes">−</button>
+            <input type="number" id="rows-count" min="1" max="10" value="1">
+            <button id="increase-rows" class="btn btn-round" aria-label="Plus de lignes">+</button>
+          </div>
+        </div>
       </div>
+
+      <p class="total-slides" id="total-slides">= 2 slides</p>
 
       <button id="convert-btn" class="btn btn-primary btn-large">Convertir</button>
     </section>
@@ -61,8 +76,8 @@
     <section class="card info-card">
       <h2>Comment utiliser l'outil ?</h2>
       <ol class="how-to-list">
-        <li>Importez une grande image contenant toutes les slides de votre carrousel, côte à côte.</li>
-        <li>Vérifiez ou corrigez le nombre de slides détecté.</li>
+        <li>Importez une grande image contenant toutes les slides de votre carrousel (en bande ou en grille).</li>
+        <li>Vérifiez ou corrigez le nombre de colonnes et de lignes détecté.</li>
         <li>Cliquez sur « Convertir » pour découper l'image.</li>
         <li>Vérifiez l'aperçu, puis téléchargez le fichier ZIP contenant vos slides prêtes pour Instagram (1080 × 1350 px).</li>
       </ol>
