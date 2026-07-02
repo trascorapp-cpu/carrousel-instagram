@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Découpeur de Carrousel Instagram</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <h1>Découpeur de Carrousel Instagram</h1>
+    <p class="subtitle">Importez une grande image, obtenez des slides prêtes à publier.</p>
+  </header>
+
+  <main class="container">
+
+    <!-- Étape 1 : Import -->
+    <section class="card" id="upload-section">
+      <h2>1. Importer votre carrousel</h2>
+
+      <div id="dropzone" class="dropzone">
+        <p class="dropzone-text">Glissez-déposez votre image ici</p>
+        <p class="dropzone-or">ou</p>
+        <label for="file-input" class="btn btn-primary">Importer un carrousel</label>
+        <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" hidden>
+        <p class="dropzone-hint">Formats acceptés : JPG, PNG, WebP</p>
+      </div>
+
+      <div id="image-info" class="image-info hidden">
+        <img id="source-preview" alt="Aperçu de l'image importée">
+        <div class="image-info-text">
+          <p id="image-dimensions"></p>
+          <button id="change-image-btn" class="btn btn-secondary">Changer d'image</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Étape 2 : Options -->
+    <section class="card hidden" id="options-section">
+      <h2>2. Nombre de slides</h2>
+      <p class="hint">Nous avons détecté un nombre de slides probable. Corrigez-le si besoin.</p>
+
+      <div class="slide-count-control">
+        <button id="decrease-count" class="btn btn-round" aria-label="Diminuer">−</button>
+        <input type="number" id="slide-count" min="1" max="20" value="2">
+        <button id="increase-count" class="btn btn-round" aria-label="Augmenter">+</button>
+      </div>
+
+      <button id="convert-btn" class="btn btn-primary btn-large">Convertir</button>
+    </section>
+
+    <!-- Étape 3 : Aperçu + téléchargement -->
+    <section class="card hidden" id="preview-section">
+      <h2>3. Aperçu des slides</h2>
+      <div id="preview-grid" class="preview-grid"></div>
+      <button id="download-btn" class="btn btn-primary btn-large">Télécharger le ZIP</button>
+    </section>
+
+    <!-- Comment utiliser -->
+    <section class="card info-card">
+      <h2>Comment utiliser l'outil ?</h2>
+      <ol class="how-to-list">
+        <li>Importez une grande image contenant toutes les slides de votre carrousel, côte à côte.</li>
+        <li>Vérifiez ou corrigez le nombre de slides détecté.</li>
+        <li>Cliquez sur « Convertir » pour découper l'image.</li>
+        <li>Vérifiez l'aperçu, puis téléchargez le fichier ZIP contenant vos slides prêtes pour Instagram (1080 × 1350 px).</li>
+      </ol>
+      <p class="privacy-note">Tout se passe dans votre navigateur : aucune image n'est envoyée sur un serveur.</p>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p>Découpeur de Carrousel Instagram — gratuit, sans compte, sans serveur.</p>
+  </footer>
+
+  <script src="jszip.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
