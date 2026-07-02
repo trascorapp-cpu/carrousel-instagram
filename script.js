@@ -25,6 +25,7 @@ const increaseColsBtn = document.getElementById('increase-cols');
 const decreaseRowsBtn = document.getElementById('decrease-rows');
 const increaseRowsBtn = document.getElementById('increase-rows');
 const totalSlidesLabel = document.getElementById('total-slides');
+const detectionNote = document.getElementById('detection-note');
 const convertBtn = document.getElementById('convert-btn');
 
 const previewSection = document.getElementById('preview-section');
@@ -90,10 +91,11 @@ function onImageLoaded(img, dataUrl) {
   imageDimensions.textContent = `${img.width} × ${img.height} px`;
   imageInfo.classList.remove('hidden');
 
-  const detectedGrid = detectGrid(img.width, img.height);
+  const detectedGrid = detectGrid(img);
   colsInput.value = detectedGrid.cols;
   rowsInput.value = detectedGrid.rows;
   updateTotalSlidesLabel();
+  setDetectionNote(detectedGrid.confident);
   optionsSection.classList.remove('hidden');
   previewSection.classList.add('hidden');
 
@@ -101,39 +103,127 @@ function onImageLoaded(img, dataUrl) {
 }
 
 // ===== Détection automatique de la disposition (colonnes x lignes) =====
-// Deux cas fréquents pour un carrousel Instagram :
-// - une bande horizontale (1 ligne, plusieurs slides carrées ou 4:5 côte à côte)
-// - une grille carrée (ex : 3x3), format très utilisé par les outils de
-//   création de carrousels (Canva et autres).
-// C'est une estimation : les champs restent modifiables manuellement.
-function detectGrid(width, height) {
-  const overallRatio = width / height;
+// On repère les vraies coutures entre les slides : à chaque frontière entre
+// deux slides, l'image change généralement nettement (fond différent,
+// nouveau visuel, bordure). On mesure ces changements de couleur colonne
+// par colonne et ligne par ligne, puis on cherche à quel nombre de
+// colonnes/lignes ces changements sont les plus alignés.
+function detectGrid(img) {
+  const profile = buildEdgeProfile(img);
+  const cols = findBestSplit(profile.colDiff, profile.width);
+  const rows = findBestSplit(profile.rowDiff, profile.height);
 
-  // Image globalement carrée : on suppose une grille 3x3, la disposition
-  // la plus courante pour ce type d'export.
-  if (overallRatio > 0.85 && overallRatio < 1.18) {
-    return { cols: 3, rows: 3 };
+  // "confident" = on a réellement trouvé au moins une couture nette. Si ni
+  // l'axe des colonnes ni celui des lignes n'en révèle, il n'y a aucune
+  // preuve visuelle exploitable : mieux vaut le dire que de deviner 1x1.
+  return { cols, rows, confident: cols > 1 || rows > 1 };
+}
+
+// Dessine l'image sur un petit canvas d'analyse et calcule, pour chaque
+// colonne/ligne, à quel point elle diffère de sa voisine (somme des écarts
+// de couleur R/G/B moyennée sur l'axe perpendiculaire).
+function buildEdgeProfile(img) {
+  const maxDim = 500; // suffisant pour détecter des coutures, rapide à analyser
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const w = Math.max(2, Math.round(img.width * scale));
+  const h = Math.max(2, Math.round(img.height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, w, h);
+  const { data } = ctx.getImageData(0, 0, w, h);
+
+  const colDiff = new Float64Array(w); // colDiff[x] = écart entre colonne x et x-1
+  const rowDiff = new Float64Array(h);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 1; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const iPrev = (y * w + (x - 1)) * 4;
+      const d = Math.abs(data[i] - data[iPrev]) + Math.abs(data[i + 1] - data[iPrev + 1]) + Math.abs(data[i + 2] - data[iPrev + 2]);
+      colDiff[x] += d;
+    }
+  }
+  for (let x = 0; x < w; x++) colDiff[x] /= h;
+
+  for (let x = 0; x < w; x++) {
+    for (let y = 1; y < h; y++) {
+      const i = (y * w + x) * 4;
+      const iPrev = ((y - 1) * w + x) * 4;
+      const d = Math.abs(data[i] - data[iPrev]) + Math.abs(data[i + 1] - data[iPrev + 1]) + Math.abs(data[i + 2] - data[iPrev + 2]);
+      rowDiff[y] += d;
+    }
+  }
+  for (let y = 0; y < h; y++) rowDiff[y] /= w;
+
+  return { colDiff, rowDiff, width: w, height: h };
+}
+
+// Teste les découpages possibles (2 à 8 parts) et vérifie si des coutures
+// nettes existent exactement à ces positions. On retient le découpage dont
+// TOUTES les frontières sont nettement plus marquées que la moyenne du
+// reste de l'image — ce qui élimine les découpages "au hasard".
+function findBestSplit(diff, size) {
+  // Base robuste (médiane + écart absolu médian) plutôt qu'une moyenne :
+  // un dégradé ou une texture bruitée peut légèrement gonfler la moyenne
+  // partout, alors que la médiane/MAD ne bougent presque pas. Une vraie
+  // couture doit ressortir nettement au-dessus de ce bruit de fond.
+  const med = median(diff);
+  const dev = mad(diff, med) + 1; // +1 évite une division par ~0 sur une image totalement plate
+
+  // On part du découpage le plus fin (8 parts) et on redescend : le premier
+  // découpage dont TOUTES les frontières sont nettes est retenu. Une
+  // hypothèse à N parts qui tient est une preuve plus forte qu'une hypothèse
+  // à N/2 parts qui ne capte qu'une partie des coutures réelles.
+  for (let n = 8; n >= 2; n--) {
+    const boundaries = [];
+    for (let i = 1; i < n; i++) boundaries.push(Math.round((size * i) / n));
+
+    const strengths = boundaries.map((pos) => {
+      // Pic le plus fort dans une petite fenêtre autour de la position
+      // théorique (tolère un léger décalage/gouttière).
+      let peak = 0;
+      for (let o = -2; o <= 2; o++) {
+        const idx = pos + o;
+        if (idx > 0 && idx < diff.length) peak = Math.max(peak, diff[idx]);
+      }
+      return peak;
+    });
+
+    const weakest = Math.min(...strengths);
+
+    // Chaque frontière doit être un vrai pic isolé : nettement au-dessus du
+    // bruit de fond (médiane + plusieurs MAD) ET avoir une valeur absolue
+    // significative, pour ignorer les faux positifs sur des zones plates.
+    if (weakest > med + 6 * dev && weakest > 18) {
+      return n;
+    }
   }
 
-  // Sinon, on suppose une bande horizontale à une seule ligne, et on estime
-  // le nombre de slides en comparant la largeur à des formats de slide
-  // courants (carré 1:1 ou portrait 4:5).
-  const candidates = [1, OUTPUT_RATIO];
-  let bestCount = 2;
-  let bestScore = Infinity;
+  return 1;
+}
 
-  candidates.forEach((slideRatio) => {
-    const rawCount = width / (height * slideRatio);
-    const rounded = Math.round(rawCount);
-    if (rounded < 1) return;
-    const score = Math.abs(rawCount - rounded);
-    if (score < bestScore) {
-      bestScore = score;
-      bestCount = rounded;
-    }
-  });
+function median(arr) {
+  const sorted = Array.from(arr).sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
 
-  return { cols: Math.min(Math.max(bestCount, 1), 10), rows: 1 };
+function mad(arr, med) {
+  const deviations = Array.from(arr, (v) => Math.abs(v - med));
+  return median(deviations);
+}
+
+function setDetectionNote(confident) {
+  if (confident) {
+    detectionNote.textContent = '✓ Disposition détectée automatiquement à partir des coutures visibles entre les slides.';
+    detectionNote.classList.remove('detection-note-warn');
+  } else {
+    detectionNote.textContent = '⚠ Aucune couture nette détectée entre des slides — indiquez le nombre de colonnes/lignes manuellement.';
+    detectionNote.classList.add('detection-note-warn');
+  }
 }
 
 // ===== Contrôle des colonnes / lignes =====
