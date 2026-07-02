@@ -333,16 +333,24 @@ function sliceImage(img, cols, rows) {
       canvas.height = OUTPUT_HEIGHT;
       const ctx = canvas.getContext('2d');
 
-      const sx = c * sliceWidth;
-      const sy = r * sliceHeight;
+      // Petite marge de sécurité à l'intérieur de chaque cellule : les
+      // mosaïques générées par IA ont souvent un fin liseré/divider entre
+      // les panneaux, qu'on ne veut pas capturer dans le résultat final.
+      const insetX = sliceWidth * 0.02;
+      const insetY = sliceHeight * 0.02;
+      const sx = c * sliceWidth + insetX;
+      const sy = r * sliceHeight + insetY;
+      const cellWidth = sliceWidth - insetX * 2;
+      const cellHeight = sliceHeight - insetY * 2;
 
       // On n'utilise jamais de recadrage qui coupe du contenu (une slide de
       // carrousel a souvent du texte près des bords). La cellule est
       // toujours affichée en entier ("contain"), centrée ; l'espace vide
       // éventuel (quand la cellule n'est pas déjà au format 4:5) est comblé
-      // par un fond flouté issu de la même image, pour un rendu propre.
-      drawBlurredBackground(ctx, img, sx, sy, sliceWidth, sliceHeight);
-      drawContainedSlide(ctx, img, sx, sy, sliceWidth, sliceHeight);
+      // par la couleur exacte du bord de la slide plutôt qu'un flou, pour un
+      // raccord invisible sur les designs à fond uni.
+      drawEdgeColorBackground(ctx, img, sx, sy, cellWidth, cellHeight);
+      drawContainedSlide(ctx, img, sx, sy, cellWidth, cellHeight);
 
       index++;
       const filename = `slide_${String(index).padStart(2, '0')}.png`;
@@ -353,36 +361,60 @@ function sliceImage(img, cols, rows) {
   return slides;
 }
 
-function drawBlurredBackground(ctx, img, sx, sy, sWidth, sHeight) {
-  // Recadrage "cover" classique, mais uniquement pour le fond décoratif :
-  // ici, rogner ne fait perdre aucune information puisque ce calque est
-  // flouté et toujours recouvert par le contenu réel au premier plan.
-  const sliceRatio = sWidth / sHeight;
-  let cropWidth = sWidth;
-  let cropHeight = sHeight;
-  let cropX = sx;
-  let cropY = sy;
+function drawEdgeColorBackground(ctx, img, sx, sy, sWidth, sHeight) {
+  const scale = Math.min(OUTPUT_WIDTH / sWidth, OUTPUT_HEIGHT / sHeight);
+  const drawWidth = sWidth * scale;
+  const drawHeight = sHeight * scale;
+  const dx = (OUTPUT_WIDTH - drawWidth) / 2;
+  const dy = (OUTPUT_HEIGHT - drawHeight) / 2;
 
-  if (sliceRatio > OUTPUT_RATIO) {
-    cropWidth = sHeight * OUTPUT_RATIO;
-    cropX = sx + (sWidth - cropWidth) / 2;
-  } else if (sliceRatio < OUTPUT_RATIO) {
-    cropHeight = sWidth / OUTPUT_RATIO;
-    cropY = sy + (sHeight - cropHeight) / 2;
+  if (dx > 0.5) {
+    // Bandes verticales (gauche/droite) : on prélève la couleur exacte de
+    // chaque bord de la slide pour un raccord invisible sur fond uni.
+    const pad = Math.ceil(dx) + 1;
+    ctx.fillStyle = averageEdgeColor(img, sx, sy, sWidth, sHeight, 'left');
+    ctx.fillRect(0, 0, pad, OUTPUT_HEIGHT);
+    ctx.fillStyle = averageEdgeColor(img, sx, sy, sWidth, sHeight, 'right');
+    ctx.fillRect(OUTPUT_WIDTH - pad, 0, pad, OUTPUT_HEIGHT);
+  } else if (dy > 0.5) {
+    // Bandes horizontales (haut/bas)
+    const pad = Math.ceil(dy) + 1;
+    ctx.fillStyle = averageEdgeColor(img, sx, sy, sWidth, sHeight, 'top');
+    ctx.fillRect(0, 0, OUTPUT_WIDTH, pad);
+    ctx.fillStyle = averageEdgeColor(img, sx, sy, sWidth, sHeight, 'bottom');
+    ctx.fillRect(0, OUTPUT_HEIGHT - pad, OUTPUT_WIDTH, pad);
+  }
+}
+
+// Réduit une fine bande prélevée sur un bord de la slide à un unique pixel :
+// le lissage du navigateur lors de la réduction moyenne toutes les couleurs
+// de cette bande, ce qui donne une teinte représentative du bord.
+function averageEdgeColor(img, sx, sy, sWidth, sHeight, side) {
+  const stripFraction = 0.04;
+  let stripSx = sx;
+  let stripSy = sy;
+  let stripSw = sWidth;
+  let stripSh = sHeight;
+
+  if (side === 'left') {
+    stripSw = Math.max(1, sWidth * stripFraction);
+  } else if (side === 'right') {
+    stripSw = Math.max(1, sWidth * stripFraction);
+    stripSx = sx + sWidth - stripSw;
+  } else if (side === 'top') {
+    stripSh = Math.max(1, sHeight * stripFraction);
+  } else if (side === 'bottom') {
+    stripSh = Math.max(1, sHeight * stripFraction);
+    stripSy = sy + sHeight - stripSh;
   }
 
-  ctx.save();
-  ctx.filter = 'blur(28px)';
-  // On dessine légèrement plus grand que le canvas pour que le flou ne
-  // laisse pas apparaître de bord net sur les côtés.
-  const bleed = 1.15;
-  const bw = OUTPUT_WIDTH * bleed;
-  const bh = OUTPUT_HEIGHT * bleed;
-  ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, (OUTPUT_WIDTH - bw) / 2, (OUTPUT_HEIGHT - bh) / 2, bw, bh);
-  ctx.restore();
-
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
-  ctx.fillRect(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+  const sampleCanvas = document.createElement('canvas');
+  sampleCanvas.width = 1;
+  sampleCanvas.height = 1;
+  const sampleCtx = sampleCanvas.getContext('2d');
+  sampleCtx.drawImage(img, stripSx, stripSy, stripSw, stripSh, 0, 0, 1, 1);
+  const [r, g, b] = sampleCtx.getImageData(0, 0, 1, 1).data;
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 function drawContainedSlide(ctx, img, sx, sy, sWidth, sHeight) {
