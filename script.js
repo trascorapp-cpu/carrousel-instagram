@@ -26,6 +26,7 @@ const decreaseRowsBtn = document.getElementById('decrease-rows');
 const increaseRowsBtn = document.getElementById('increase-rows');
 const totalSlidesLabel = document.getElementById('total-slides');
 const detectionNote = document.getElementById('detection-note');
+const gridPreviewCanvas = document.getElementById('grid-preview-canvas');
 const convertBtn = document.getElementById('convert-btn');
 
 const previewSection = document.getElementById('preview-section');
@@ -96,10 +97,50 @@ function onImageLoaded(img, dataUrl) {
   rowsInput.value = detectedGrid.rows;
   updateTotalSlidesLabel();
   setDetectionNote(detectedGrid.confident);
+  renderGridPreview();
   optionsSection.classList.remove('hidden');
   previewSection.classList.add('hidden');
 
   optionsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Dessine l'image importée avec des lignes rouges superposées aux positions
+// de découpe actuelles (colonnes/lignes), pour vérifier visuellement avant
+// de convertir.
+function renderGridPreview() {
+  if (!currentImage) return;
+
+  const containerWidth = gridPreviewCanvas.parentElement.clientWidth || 600;
+  const scale = containerWidth / currentImage.width;
+  const w = Math.round(currentImage.width * scale);
+  const h = Math.round(currentImage.height * scale);
+
+  gridPreviewCanvas.width = w;
+  gridPreviewCanvas.height = h;
+  const ctx = gridPreviewCanvas.getContext('2d');
+  ctx.drawImage(currentImage, 0, 0, w, h);
+
+  const cols = Math.min(Math.max(parseInt(colsInput.value, 10) || 1, 1), 10);
+  const rows = Math.min(Math.max(parseInt(rowsInput.value, 10) || 1, 1), 10);
+
+  ctx.strokeStyle = '#ff3b3b';
+  ctx.lineWidth = 2;
+
+  for (let c = 1; c < cols; c++) {
+    const x = Math.round((w * c) / cols);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  }
+
+  for (let r = 1; r < rows; r++) {
+    const y = Math.round((h * r) / rows);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
 }
 
 // ===== Détection automatique de la disposition (colonnes x lignes) =====
@@ -235,28 +276,34 @@ function updateTotalSlidesLabel() {
   totalSlidesLabel.textContent = `= ${total} slide${total > 1 ? 's' : ''}`;
 }
 
+function refreshOptions() {
+  updateTotalSlidesLabel();
+  renderGridPreview();
+}
+
 decreaseColsBtn.addEventListener('click', () => {
   colsInput.value = Math.max(1, parseInt(colsInput.value || '1', 10) - 1);
-  updateTotalSlidesLabel();
+  refreshOptions();
 });
 
 increaseColsBtn.addEventListener('click', () => {
   colsInput.value = Math.min(10, parseInt(colsInput.value || '1', 10) + 1);
-  updateTotalSlidesLabel();
+  refreshOptions();
 });
 
 decreaseRowsBtn.addEventListener('click', () => {
   rowsInput.value = Math.max(1, parseInt(rowsInput.value || '1', 10) - 1);
-  updateTotalSlidesLabel();
+  refreshOptions();
 });
 
 increaseRowsBtn.addEventListener('click', () => {
   rowsInput.value = Math.min(10, parseInt(rowsInput.value || '1', 10) + 1);
-  updateTotalSlidesLabel();
+  refreshOptions();
 });
 
-colsInput.addEventListener('input', updateTotalSlidesLabel);
-rowsInput.addEventListener('input', updateTotalSlidesLabel);
+colsInput.addEventListener('input', refreshOptions);
+rowsInput.addEventListener('input', refreshOptions);
+window.addEventListener('resize', () => renderGridPreview());
 
 // ===== Conversion : découpage + redimensionnement =====
 
@@ -286,28 +333,16 @@ function sliceImage(img, cols, rows) {
       canvas.height = OUTPUT_HEIGHT;
       const ctx = canvas.getContext('2d');
 
-      // Découpe la cellule (c, r) dans l'image source
       const sx = c * sliceWidth;
       const sy = r * sliceHeight;
 
-      // Recadrage "cover" pour remplir 1080x1350 sans déformer l'image
-      const sliceRatio = sliceWidth / sliceHeight;
-      let cropWidth = sliceWidth;
-      let cropHeight = sliceHeight;
-      let cropX = sx;
-      let cropY = sy;
-
-      if (sliceRatio > OUTPUT_RATIO) {
-        // Cellule trop large : on rogne les côtés
-        cropWidth = sliceHeight * OUTPUT_RATIO;
-        cropX = sx + (sliceWidth - cropWidth) / 2;
-      } else if (sliceRatio < OUTPUT_RATIO) {
-        // Cellule trop haute : on rogne haut/bas
-        cropHeight = sliceWidth / OUTPUT_RATIO;
-        cropY = sy + (sliceHeight - cropHeight) / 2;
-      }
-
-      ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+      // On n'utilise jamais de recadrage qui coupe du contenu (une slide de
+      // carrousel a souvent du texte près des bords). La cellule est
+      // toujours affichée en entier ("contain"), centrée ; l'espace vide
+      // éventuel (quand la cellule n'est pas déjà au format 4:5) est comblé
+      // par un fond flouté issu de la même image, pour un rendu propre.
+      drawBlurredBackground(ctx, img, sx, sy, sliceWidth, sliceHeight);
+      drawContainedSlide(ctx, img, sx, sy, sliceWidth, sliceHeight);
 
       index++;
       const filename = `slide_${String(index).padStart(2, '0')}.png`;
@@ -316,6 +351,47 @@ function sliceImage(img, cols, rows) {
   }
 
   return slides;
+}
+
+function drawBlurredBackground(ctx, img, sx, sy, sWidth, sHeight) {
+  // Recadrage "cover" classique, mais uniquement pour le fond décoratif :
+  // ici, rogner ne fait perdre aucune information puisque ce calque est
+  // flouté et toujours recouvert par le contenu réel au premier plan.
+  const sliceRatio = sWidth / sHeight;
+  let cropWidth = sWidth;
+  let cropHeight = sHeight;
+  let cropX = sx;
+  let cropY = sy;
+
+  if (sliceRatio > OUTPUT_RATIO) {
+    cropWidth = sHeight * OUTPUT_RATIO;
+    cropX = sx + (sWidth - cropWidth) / 2;
+  } else if (sliceRatio < OUTPUT_RATIO) {
+    cropHeight = sWidth / OUTPUT_RATIO;
+    cropY = sy + (sHeight - cropHeight) / 2;
+  }
+
+  ctx.save();
+  ctx.filter = 'blur(28px)';
+  // On dessine légèrement plus grand que le canvas pour que le flou ne
+  // laisse pas apparaître de bord net sur les côtés.
+  const bleed = 1.15;
+  const bw = OUTPUT_WIDTH * bleed;
+  const bh = OUTPUT_HEIGHT * bleed;
+  ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, (OUTPUT_WIDTH - bw) / 2, (OUTPUT_HEIGHT - bh) / 2, bw, bh);
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+  ctx.fillRect(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+}
+
+function drawContainedSlide(ctx, img, sx, sy, sWidth, sHeight) {
+  const scale = Math.min(OUTPUT_WIDTH / sWidth, OUTPUT_HEIGHT / sHeight);
+  const drawWidth = sWidth * scale;
+  const drawHeight = sHeight * scale;
+  const dx = (OUTPUT_WIDTH - drawWidth) / 2;
+  const dy = (OUTPUT_HEIGHT - drawHeight) / 2;
+  ctx.drawImage(img, sx, sy, sWidth, sHeight, dx, dy, drawWidth, drawHeight);
 }
 
 function renderPreview(slides) {
