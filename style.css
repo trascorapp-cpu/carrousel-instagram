@@ -68,6 +68,20 @@ body {
   margin-top: -4px;
 }
 
+.detection-note {
+  font-size: 0.85rem;
+  color: #1a7a4c;
+  background: #eafaf1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 4px 0 0;
+}
+
+.detection-note-warn {
+  color: #8a5a00;
+  background: #fff6e0;
+}
+
 .hidden {
   display: none !important;
 }
